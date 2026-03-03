@@ -7,21 +7,32 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
-from src.logistics.domain.enums import (
+from logistics.domain.enums import (
     NodeType,
     OrderStatus,
     TransportType,
     UserRole,
 )
+from logistics.domain.exceptions import (
+    InvalidCargoError,
+    InvalidStatusTransitionError,
+)
 
+# ── Допустимые переходы статуса ──────────────────────────────────────
 
-# ── Пользователь ─────────────────────────────────────────────────────
+_VALID_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
+    OrderStatus.CREATED: {OrderStatus.PROCESSING, OrderStatus.CANCELLED},
+    OrderStatus.PROCESSING: {OrderStatus.WAITING_DROP_OFF, OrderStatus.CANCELLED},
+    OrderStatus.WAITING_DROP_OFF: {OrderStatus.IN_TRANSIT, OrderStatus.CANCELLED},
+    OrderStatus.IN_TRANSIT: {OrderStatus.ARRIVED, OrderStatus.CANCELLED},
+    OrderStatus.ARRIVED: {OrderStatus.DELIVERED, OrderStatus.CANCELLED},
+    OrderStatus.DELIVERED: set(),
+    OrderStatus.CANCELLED: set(),
+}
 
 
 @dataclass
 class User:
-    """Пользователь системы (клиент / менеджер / администратор)."""
-
     login: str
     password_hash: str
     role: UserRole
@@ -30,13 +41,8 @@ class User:
     created_at: datetime | None = None
 
 
-# ── Вершина графа ────────────────────────────────────────────────────
-
-
 @dataclass
 class Location:
-    """Вершина транспортного графа (склад, аэропорт, ПВЗ и т.д.)."""
-
     name: str
     type: NodeType
     address: str
@@ -45,12 +51,43 @@ class Location:
     geo_lon: float | None = None
 
 
-# ── Ребро графа ──────────────────────────────────────────────────────
+@dataclass
+class Cargo:
+    """Груз заказа — расширенные категории.
+
+    Категории: хрупкий, опасный, жидкость, скоропортящийся,
+    мнущийся, требующий температурного контроля.
+    """
+
+    weight_kg: float
+    volume_m3: float
+    id: int | None = None
+    description: str = ""
+    is_fragile: bool = False
+    is_dangerous: bool = False
+    is_liquid: bool = False
+    is_perishable: bool = False
+    is_crushable: bool = False
+    req_temp_control: bool = False
+
+    def validate(self) -> bool:
+        if self.weight_kg <= 0:
+            raise InvalidCargoError(
+                f"Вес груза должен быть положительным, получено: {self.weight_kg}",
+            )
+        if self.volume_m3 <= 0:
+            raise InvalidCargoError(
+                f"Объём груза должен быть положительным, получено: {self.volume_m3}",
+            )
+        # скоропортящийся груз обязан иметь температурный контроль
+        if self.is_perishable and not self.req_temp_control:
+            self.req_temp_control = True
+        return True
 
 
 @dataclass
 class TransportLink:
-    """Ребро транспортного графа с весами и ограничениями."""
+    """Ребро графа — ограничения расширены под все категории груза."""
 
     source: Location
     target: Location
@@ -63,54 +100,34 @@ class TransportLink:
     max_volume_m3: float | None = None
     allows_dangerous: bool = False
     allows_fragile: bool = True
+    allows_liquid: bool = True
+    allows_perishable: bool = True
+    allows_crushable: bool = True
     allows_temp_control: bool = False
 
     def can_transport(self, cargo: Cargo) -> bool:
-        """Проверить, можно ли перевезти *cargo* по этому ребру.
-
-        Проверяет вес, объём и специальные флаги (хрупкость, опасность,
-        температурный контроль).
-
-        Returns:
-            True — ограничения не нарушены, False — груз не подходит.
-        """
-        raise NotImplementedError
-
-
-# ── Груз ─────────────────────────────────────────────────────────────
-
-
-@dataclass
-class Cargo:
-    """Груз заказа.  Создаётся через :class:`CargoBuilder`."""
-
-    weight_kg: float
-    volume_m3: float
-    id: int | None = None
-    description: str = ""
-    is_fragile: bool = False
-    is_dangerous: bool = False
-    req_temp_control: bool = False
-
-    def validate(self) -> bool:
-        """Проверить корректность параметров груза.
-
-        Returns:
-            True — параметры валидны.
-
-        Raises:
-            InvalidCargoError: вес ≤ 0, объём ≤ 0 и т.д.
-        """
-        raise NotImplementedError
-
-
-# ── Маршрут ──────────────────────────────────────────────────────────
+        """Проверить все ограничения ребра для данного груза."""
+        if self.max_weight_kg is not None and cargo.weight_kg > self.max_weight_kg:
+            return False
+        if self.max_volume_m3 is not None and cargo.volume_m3 > self.max_volume_m3:
+            return False
+        if cargo.is_dangerous and not self.allows_dangerous:
+            return False
+        if cargo.is_fragile and not self.allows_fragile:
+            return False
+        if cargo.is_liquid and not self.allows_liquid:
+            return False
+        if cargo.is_perishable and not self.allows_perishable:
+            return False
+        if cargo.is_crushable and not self.allows_crushable:
+            return False
+        if cargo.req_temp_control and not self.allows_temp_control:
+            return False
+        return True
 
 
 @dataclass
 class RouteSegment:
-    """Один шаг маршрута (ссылка на ребро графа + порядковый номер)."""
-
     link: TransportLink
     step_sequence: int
     is_completed: bool = False
@@ -118,20 +135,13 @@ class RouteSegment:
 
 @dataclass
 class Route:
-    """Рассчитанный маршрут (результат работы Strategy)."""
-
     segments: list[RouteSegment] = field(default_factory=list)
     total_cost: Decimal = Decimal("0")
     total_time_min: int = 0
     estimated_arrival: datetime | None = None
 
 
-# ── Заказ ────────────────────────────────────────────────────────────
-
-
 class Order:
-    """Заказ на доставку — центральная сущность домена."""
-
     def __init__(
         self,
         sender: User,
@@ -159,35 +169,34 @@ class Order:
         self.created_at = created_at or datetime.now()
 
     def update_status(self, new_status: OrderStatus) -> None:
-        """Обновить статус с проверкой допустимости перехода.
-
-        Args:
-            new_status: Целевой статус.
-
-        Raises:
-            InvalidStatusTransitionError: переход не разрешён.
-        """
-        raise NotImplementedError
+        allowed = _VALID_TRANSITIONS.get(self.status, set())
+        if new_status not in allowed:
+            raise InvalidStatusTransitionError(
+                f"Переход {self.status.value} → {new_status.value} недопустим",
+            )
+        self.status = new_status
 
     def get_tracking_info(self) -> str:
-        """Текстовое описание текущего состояния заказа."""
-        raise NotImplementedError
+        parts = [
+            f"Order {self.id}",
+            f"Status: {self.status.value}",
+            f"From: {self.origin.name} → To: {self.destination.name}",
+            f"Cargo: {self.cargo.weight_kg} kg",
+        ]
+        if self.total_cost is not None:
+            parts.append(f"Cost: {self.total_cost}")
+        if self.estimated_delivery is not None:
+            parts.append(f"ETA: {self.estimated_delivery.isoformat()}")
+        return " | ".join(parts)
 
     def assign_route(self, route: Route) -> None:
-        """Привязать рассчитанный маршрут к заказу.
-
-        Устанавливает маршрут, итоговую стоимость и прогнозное время.
-        """
-        raise NotImplementedError
-
-
-# ── Событие отслеживания ─────────────────────────────────────────────
+        self.route = route
+        self.total_cost = route.total_cost
+        self.estimated_delivery = route.estimated_arrival
 
 
 @dataclass
 class TrackingEvent:
-    """Запись журнала отслеживания (tracking_history)."""
-
     order_id: uuid.UUID
     status: OrderStatus
     event_time: datetime

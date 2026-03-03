@@ -1,104 +1,82 @@
-"""Тонкий клиент — программный интерфейс для пользователя."""
+"""Тонкий клиент — расширен для новых категорий груза."""
 
 from __future__ import annotations
 
 import socket
 
+from logistics.api.protocol import HEADER_SIZE, decode_message, encode_message, read_header
+
 
 class LogisticsClient:
-    """TCP-клиент для взаимодействия с LogisticsServer.
 
-    Предоставляет высокоуровневые методы, скрывая детали протокола.
-    """
-
-    def __init__(
-        self,
-        host: str = "127.0.0.1",
-        port: int = 9090,
-    ) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 9090) -> None:
         self._host = host
         self._port = port
 
-    # ── Публичный API ─────────────────────────────────────────────────
-
     def create_order(
-        self,
-        sender_id: int,
-        origin_id: int,
-        dest_id: int,
-        weight_kg: float,
-        height_m: float,
-        width_m: float,
-        length_m: float,
-        is_fragile: bool = False,
-        is_dangerous: bool = False,
-        receiver_id: int | None = None,
+        self, sender_id: int, origin_id: int, dest_id: int,
+        weight_kg: float, height_m: float, width_m: float, length_m: float,
+        is_fragile: bool = False, is_dangerous: bool = False,
+        is_liquid: bool = False, is_perishable: bool = False,
+        is_crushable: bool = False, req_temp_control: bool = False,
+        receiver_id: int | None = None, strategy: str = "cheapest",
     ) -> dict:
-        """Создать заказ на доставку.
-
-        Returns:
-            Словарь с данными созданного заказа.
-        """
-        raise NotImplementedError
+        return self._send_request("create_order", {
+            "sender_id": sender_id, "origin_id": origin_id, "dest_id": dest_id,
+            "weight_kg": weight_kg, "height_m": height_m, "width_m": width_m, "length_m": length_m,
+            "is_fragile": is_fragile, "is_dangerous": is_dangerous,
+            "is_liquid": is_liquid, "is_perishable": is_perishable,
+            "is_crushable": is_crushable, "req_temp_control": req_temp_control,
+            "receiver_id": receiver_id, "strategy": strategy,
+        })
 
     def get_order(self, order_id: str) -> dict:
-        """Получить информацию о заказе.
+        return self._send_request("get_order", {"order_id": order_id})
 
-        Args:
-            order_id: Строковое представление UUID.
-
-        Returns:
-            Словарь с данными заказа.
-        """
-        raise NotImplementedError
-
-    def update_status(
-        self,
-        order_id: str,
-        new_status: str,
-        comment: str | None = None,
-    ) -> dict:
-        """Обновить статус заказа.
-
-        Returns:
-            Словарь с обновлённым заказом.
-        """
-        raise NotImplementedError
+    def update_status(self, order_id: str, new_status: str, comment: str | None = None) -> dict:
+        return self._send_request("update_status", {
+            "order_id": order_id, "new_status": new_status, "comment": comment,
+        })
 
     def get_tracking(self, order_id: str) -> dict:
-        """Получить историю отслеживания.
-
-        Returns:
-            Список событий.
-        """
-        raise NotImplementedError
+        return self._send_request("get_tracking", {"order_id": order_id})
 
     def calculate_route(
-        self,
-        origin_id: int,
-        dest_id: int,
-        weight_kg: float,
-        volume_m3: float,
-        is_fragile: bool = False,
-        is_dangerous: bool = False,
+        self, origin_id: int, dest_id: int, weight_kg: float, volume_m3: float,
+        is_fragile: bool = False, is_dangerous: bool = False,
+        is_liquid: bool = False, is_perishable: bool = False,
+        is_crushable: bool = False, req_temp_control: bool = False,
+        strategy: str = "cheapest",
     ) -> dict:
-        """Рассчитать маршрут и стоимость.
+        return self._send_request("calculate_route", {
+            "origin_id": origin_id, "dest_id": dest_id,
+            "weight_kg": weight_kg, "volume_m3": volume_m3,
+            "is_fragile": is_fragile, "is_dangerous": is_dangerous,
+            "is_liquid": is_liquid, "is_perishable": is_perishable,
+            "is_crushable": is_crushable, "req_temp_control": req_temp_control,
+            "strategy": strategy,
+        })
 
-        Returns:
-            Словарь с маршрутом, стоимостью, временем.
-        """
-        raise NotImplementedError
-
-    # ── Транспортный метод ────────────────────────────────────────────
+    def list_locations(self) -> dict:
+        return self._send_request("list_locations", {})
 
     def _send_request(self, method: str, params: dict) -> dict:
-        """Сериализовать запрос, отправить, прочитать ответ.
+        payload = {"method": method, "params": params}
+        data = encode_message(payload)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((self._host, self._port))
+            sock.sendall(data)
+            header = self._recv_exact(sock, HEADER_SIZE)
+            body_len = read_header(header)
+            body = self._recv_exact(sock, body_len)
+            return decode_message(body)
 
-        Args:
-            method: Имя вызываемого метода сервера.
-            params: Параметры вызова.
-
-        Returns:
-            Десериализованный ответ.
-        """
-        raise NotImplementedError
+    @staticmethod
+    def _recv_exact(sock: socket.socket, n: int) -> bytes:
+        data = b""
+        while len(data) < n:
+            chunk = sock.recv(n - len(data))
+            if not chunk:
+                raise ConnectionError("Соединение закрыто")
+            data += chunk
+        return data

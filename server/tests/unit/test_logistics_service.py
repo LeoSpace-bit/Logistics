@@ -479,14 +479,34 @@ class TestCalculateRoute:
             )
 
     def test_no_strategy_raises(
-        self,
-        logistics_service: LogisticsService,
+            self,
+            logistics_service: LogisticsService,
+            mock_location_repo,
+            mock_link_repo,
+            sample_location_moscow,
+            sample_location_spb,
+            sample_link,
     ) -> None:
-        """Стратегия не установлена → ошибка."""
-        with pytest.raises(Exception):
-            logistics_service.calculate_route(
-                origin_id=1,
-                dest_id=2,
-                weight_kg=5.0,
-                volume_m3=0.05,
-            )
+        """Стратегия по умолчанию используется, если не задана явно."""
+        mock_location_repo.get_by_id.side_effect = (
+            lambda lid: {
+                1: sample_location_moscow,
+                2: sample_location_spb,
+            }.get(lid)
+        )
+        mock_location_repo.get_all.return_value = [
+            sample_location_moscow,
+            sample_location_spb,
+        ]
+        mock_link_repo.get_all.return_value = [sample_link]
+
+        # Стратегия НЕ установлена через set_strategy,
+        # но calculate_route сам создаёт CheapestRouteStrategy
+        result = logistics_service.calculate_route(
+            origin_id=1,
+            dest_id=2,
+            weight_kg=5.0,
+            volume_m3=0.05,
+        )
+        assert isinstance(result, RouteResponseDTO)
+        assert result.total_cost > 0

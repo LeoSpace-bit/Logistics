@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from src.logistics.domain.models import Cargo
+from logistics.domain.exceptions import InvalidCargoError
+from logistics.domain.models import Cargo
 
 
 class CargoBuilder:
     """Строитель груза.
 
-    Пример (будущего) использования::
+    Пример использования::
 
         cargo = (
             CargoBuilder()
@@ -33,29 +34,37 @@ class CargoBuilder:
 
     def set_weight(self, weight_kg: float) -> CargoBuilder:
         """Установить вес груза (кг)."""
-        raise NotImplementedError
+        self._weight_kg = weight_kg
+        return self
 
     def set_dimensions(
         self, height_m: float, width_m: float, length_m: float,
     ) -> CargoBuilder:
         """Установить габариты груза (метры)."""
-        raise NotImplementedError
+        self._height_m = height_m
+        self._width_m = width_m
+        self._length_m = length_m
+        return self
 
     def set_description(self, description: str) -> CargoBuilder:
         """Установить текстовое описание груза."""
-        raise NotImplementedError
+        self._description = description
+        return self
 
     def mark_as_fragile(self) -> CargoBuilder:
         """Отметить груз как хрупкий."""
-        raise NotImplementedError
+        self._is_fragile = True
+        return self
 
     def mark_as_dangerous(self) -> CargoBuilder:
         """Отметить груз как опасный."""
-        raise NotImplementedError
+        self._is_dangerous = True
+        return self
 
     def require_temp_control(self) -> CargoBuilder:
         """Указать, что требуется температурный контроль."""
-        raise NotImplementedError
+        self._req_temp_control = True
+        return self
 
     # ── Сборка ────────────────────────────────────────────────────────
 
@@ -69,8 +78,45 @@ class CargoBuilder:
             InvalidCargoError: обязательные поля (вес, габариты) не заданы
                 или имеют некорректные значения.
         """
-        raise NotImplementedError
+        if self._weight_kg is None:
+            raise InvalidCargoError("Вес груза не задан")
+        if self._weight_kg <= 0:
+            raise InvalidCargoError(
+                f"Вес должен быть положительным, получено: {self._weight_kg}",
+            )
+
+        if (
+            self._height_m is None
+            or self._width_m is None
+            or self._length_m is None
+        ):
+            raise InvalidCargoError("Габариты груза не заданы (нужны все три)")
+
+        if self._height_m <= 0 or self._width_m <= 0 or self._length_m <= 0:
+            raise InvalidCargoError(
+                "Все габариты должны быть положительными: "
+                f"h={self._height_m}, w={self._width_m}, l={self._length_m}",
+            )
+
+        volume = self._height_m * self._width_m * self._length_m
+
+        return Cargo(
+            weight_kg=self._weight_kg,
+            volume_m3=volume,
+            description=self._description,
+            is_fragile=self._is_fragile,
+            is_dangerous=self._is_dangerous,
+            req_temp_control=self._req_temp_control,
+        )
 
     def reset(self) -> CargoBuilder:
         """Сбросить все поля строителя в начальное состояние."""
-        raise NotImplementedError
+        self._weight_kg = None
+        self._height_m = None
+        self._width_m = None
+        self._length_m = None
+        self._description = ""
+        self._is_fragile = False
+        self._is_dangerous = False
+        self._req_temp_control = False
+        return self
