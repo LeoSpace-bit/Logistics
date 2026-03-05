@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Управление заказами{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Управление заказами</h2>
+
+<!-- Фильтры -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="text-muted">Фильтр:</span>
+            <a href="{{ url_for('manage_orders') }}"
+               class="btn btn-sm {% if not status_filter %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+                Все ({{ orders|length if not status_filter else '…' }})
+            </a>
+            {% for code, label in STATUS_LABELS.items() %}
+            <a href="{{ url_for('manage_orders', status=code) }}"
+               class="btn btn-sm {% if status_filter == code %}btn-{{ STATUS_COLORS[code] }}{% else %}btn-outline-{{ STATUS_COLORS[code] }}{% endif %}">
+                {{ label }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if orders %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Статус</th>
+                        <th>Откуда → Куда</th>
+                        <th>Вес</th>
+                        <th>Стоимость</th>
+                        <th>Создан</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for o in orders %}
+                    <tr>
+                        <td><code>{{ o.id|short_uuid }}</code></td>
+                        <td>
+                            <span class="badge bg-{{ o.status|status_color }}">
+                                {{ o.status|status_label }}
+                            </span>
+                        </td>
+                        <td>{{ o.origin }} → {{ o.destination }}</td>
+                        <td>{{ o.cargo_weight_kg }} кг</td>
+                        <td>{{ o.total_cost|fmt_money }}</td>
+                        <td>{{ o.created_at|fmt_date }}</td>
+                        <td>
+                            <a href="{{ url_for('manage_order', order_id=o.id) }}"
+                               class="btn btn-sm btn-primary">Управление</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted p-5">Нет заказов</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

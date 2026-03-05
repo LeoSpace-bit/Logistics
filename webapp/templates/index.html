@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Логистика — Главная{% endblock %}
+
+{% block content %}
+<div class="hero-section text-center rounded-3 mb-4">
+    <h1 class="display-5 fw-bold">Логистический сервис</h1>
+    <p class="lead">Отслеживание посылок, расчёт маршрутов, управление доставкой</p>
+    <a href="{{ url_for('login') }}" class="btn btn-light btn-lg me-2">Войти</a>
+    <a href="{{ url_for('register') }}" class="btn btn-outline-light btn-lg">Регистрация</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <div class="fs-1 mb-2">📦</div>
+                <h5>Создание заказов</h5>
+                <p class="text-muted">Оформляйте доставку между 20 пунктами по всей России</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <div class="fs-1 mb-2">🗺️</div>
+                <h5>Умная маршрутизация</h5>
+                <p class="text-muted">Оптимальный путь по цене или скорости с учётом типа груза</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <div class="fs-1 mb-2">📍</div>
+                <h5>Отслеживание</h5>
+                <p class="text-muted">Полная история перемещений и смены статуса</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

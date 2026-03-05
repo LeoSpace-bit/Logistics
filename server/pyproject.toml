@@ -11,6 +11,9 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+webapp = [
+    "flask>=3.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

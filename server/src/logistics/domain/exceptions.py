@@ -6,20 +6,24 @@ class DomainError(Exception):
 
 
 class InvalidCargoError(DomainError):
-    """Невалидные параметры груза (отрицательный вес, нулевой объём и т.д.)."""
+    """Невалидные параметры груза."""
 
 
 class RouteNotFoundError(DomainError):
-    """Маршрут между заданными точками не найден."""
+    """Маршрут не найден."""
 
 
 class OrderNotFoundError(DomainError):
-    """Заказ с указанным ID не существует."""
+    """Заказ не существует."""
 
 
 class InvalidStatusTransitionError(DomainError):
-    """Недопустимый переход статуса (например, DELIVERED → CREATED)."""
+    """Недопустимый переход статуса."""
 
 
 class CargoRestrictionError(DomainError):
-    """Груз не может быть перевезён по данному ребру (превышение веса и пр.)."""
+    """Груз не может быть перевезён по данному ребру."""
+
+
+class AuthenticationError(DomainError):
+    """Ошибка аутентификации."""

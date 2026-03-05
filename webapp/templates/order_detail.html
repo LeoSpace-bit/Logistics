@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Заказ {{ order.id|short_uuid }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('my_orders') }}">Мои заказы</a></li>
+        <li class="breadcrumb-item active">{{ order.id|short_uuid }}</li>
+    </ol>
+</nav>
+
+<div class="row g-4">
+
+    <!-- Информация -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">📋 Информация о заказе</div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td class="text-muted" style="width:40%">Трек-номер</td>
+                        <td><code>{{ order.id }}</code></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Статус</td>
+                        <td>
+                            <span class="badge bg-{{ order.status|status_color }} fs-6">
+                                {{ order.status|status_label }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Откуда</td>
+                        <td>{{ order.origin }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Куда</td>
+                        <td>{{ order.destination }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Вес груза</td>
+                        <td>{{ order.cargo_weight_kg }} кг</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Стоимость</td>
+                        <td class="fw-bold">{{ order.total_cost|fmt_money }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Создан</td>
+                        <td>{{ order.created_at|fmt_date }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Прогноз доставки</td>
+                        <td>{{ order.estimated_delivery|fmt_date }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Отслеживание -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">📍 История отслеживания</div>
+            <div class="card-body">
+                {% if events %}
+                <div class="tracking-timeline">
+                    {% for ev in events|reverse %}
+                    <div class="tracking-event">
+                        <div>
+                            <span class="badge bg-{{ ev.status|status_color }}">
+                                {{ ev.status|status_label }}
+                            </span>
+                            <small class="text-muted ms-2">{{ ev.event_time|fmt_date }}</small>
+                        </div>
+                        {% if ev.comment %}
+                        <small class="text-muted">{{ ev.comment }}</small>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Нет событий</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

@@ -1,19 +1,24 @@
-"""Главный сервис приложения — расширен для всех категорий груза."""
+"""Главный сервис приложения — расширен для webapp."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 
+from sqlalchemy.orm import Session
+
 from logistics.domain.builder import CargoBuilder
 from logistics.domain.enums import OrderStatus, TransportType
 from logistics.domain.exceptions import (
+    AuthenticationError,
     InvalidStatusTransitionError,
     OrderNotFoundError,
     RouteNotFoundError,
+    DomainError,
 )
 from logistics.domain.graph import TransportGraph
-from logistics.domain.models import Cargo, Order, TrackingEvent
+from logistics.domain.models import Cargo, Order, TrackingEvent, User
+from logistics.domain.enums import UserRole
 from logistics.domain.strategy import (
     CheapestRouteStrategy,
     FastestRouteStrategy,
@@ -54,6 +59,7 @@ class LogisticsService:
         tracking_repo: ITrackingRepository,
         segment_repo: IRouteSegmentRepository,
         user_repo: IUserRepository,
+        session: Session | None = None,
     ) -> None:
         self._order_repo = order_repo
         self._cargo_repo = cargo_repo
@@ -62,8 +68,14 @@ class LogisticsService:
         self._tracking_repo = tracking_repo
         self._segment_repo = segment_repo
         self._user_repo = user_repo
+        self._session = session
         self._strategy: IRouteStrategy | None = None
         self._graph: TransportGraph | None = None
+
+    def _commit(self) -> None:
+        """Зафиксировать изменения в БД."""
+        if self._session is not None:
+            self._session.commit()
 
     @staticmethod
     def _order_to_dto(order: Order) -> OrderResponseDTO:
@@ -76,6 +88,55 @@ class LogisticsService:
             estimated_delivery=order.estimated_delivery,
             created_at=order.created_at,
         )
+
+    # ── Аутентификация ────────────────────────────────────────────────
+
+    def authenticate(self, login: str, password: str) -> dict:
+        """Проверить учётные данные пользователя.
+
+        Returns:
+            Словарь с данными пользователя.
+
+        Raises:
+            AuthenticationError: неверный логин или пароль.
+        """
+        user = self._user_repo.get_by_login(login)
+        if user is None:
+            raise AuthenticationError("Неверный логин или пароль")
+        if user.password_hash != password:
+            raise AuthenticationError("Неверный логин или пароль")
+        return {
+            "id": user.id,
+            "login": user.login,
+            "role": user.role.value if isinstance(user.role, UserRole) else user.role,
+            "full_name": user.full_name or user.login,
+        }
+
+    def register_user(
+        self, login: str, password: str, full_name: str,
+    ) -> dict:
+        """Зарегистрировать нового пользователя (роль CLIENT).
+
+        Raises:
+            DomainError: логин уже занят.
+        """
+        existing = self._user_repo.get_by_login(login)
+        if existing is not None:
+            raise DomainError(f"Логин «{login}» уже занят")
+        user = User(
+            login=login,
+            password_hash=password,
+            role=UserRole.CLIENT,
+            full_name=full_name,
+        )
+        self._user_repo.save(user)
+        self._commit()
+        return {
+            "id": user.id,
+            "login": user.login,
+            "role": user.role.value,
+            "full_name": user.full_name,
+        }
 
     # ── Стратегия и граф ──────────────────────────────────────────────
 
@@ -91,7 +152,7 @@ class LogisticsService:
         self._graph = graph
         return graph
 
-    # ── Создание заказа ───────────────────────────────────────────────
+    # ── Заказы ────────────────────────────────────────────────────────
 
     def create_order(self, dto: OrderCreateDTO) -> OrderResponseDTO:
         sender = self._user_repo.get_by_id(dto.sender_id)
@@ -121,15 +182,17 @@ class LogisticsService:
             builder.mark_as_crushable()
         if dto.cargo.req_temp_control:
             builder.require_temp_control()
-        cargo = builder.build()  # может бросить InvalidCargoError
+        cargo = builder.build()
 
         receiver = None
         if dto.receiver_id is not None:
             receiver = self._user_repo.get_by_id(dto.receiver_id)
 
-        order = Order(sender=sender, origin=origin, destination=destination, cargo=cargo, receiver=receiver)
+        order = Order(
+            sender=sender, origin=origin, destination=destination,
+            cargo=cargo, receiver=receiver,
+        )
 
-        # Стратегия из DTO или текущая
         strategy = self._strategy
         if dto.strategy and dto.strategy in _STRATEGIES:
             strategy = _STRATEGIES[dto.strategy]()
@@ -149,8 +212,12 @@ class LogisticsService:
         if order.route is not None:
             self._segment_repo.save_segments(order.id, order.route.segments)
 
-        event = TrackingEvent(order_id=order.id, status=OrderStatus.CREATED, event_time=order.created_at)
+        event = TrackingEvent(
+            order_id=order.id, status=OrderStatus.CREATED,
+            event_time=order.created_at,
+        )
         self._tracking_repo.add_event(event)
+        self._commit()
 
         return self._order_to_dto(order)
 
@@ -163,6 +230,11 @@ class LogisticsService:
     def list_orders_by_sender(self, sender_id: int) -> list[OrderResponseDTO]:
         return [self._order_to_dto(o) for o in self._order_repo.list_by_sender(sender_id)]
 
+    def list_all_orders(self) -> list[OrderResponseDTO]:
+        return [self._order_to_dto(o) for o in self._order_repo.list_all()]
+
+    # ── Статус ────────────────────────────────────────────────────────
+
     def update_status(self, dto: StatusUpdateDTO) -> OrderResponseDTO:
         order = self._order_repo.get_by_id(dto.order_id)
         if order is None:
@@ -172,10 +244,14 @@ class LogisticsService:
         self._order_repo.update_status(dto.order_id, new_status)
         event = TrackingEvent(
             order_id=dto.order_id, status=new_status,
-            event_time=datetime.now(), location_id=dto.location_id, comment=dto.comment,
+            event_time=datetime.now(), location_id=dto.location_id,
+            comment=dto.comment,
         )
         self._tracking_repo.add_event(event)
+        self._commit()
         return self._order_to_dto(order)
+
+    # ── Отслеживание ──────────────────────────────────────────────────
 
     def get_tracking_history(self, order_id: uuid.UUID) -> list[TrackingEventDTO]:
         order = self._order_repo.get_by_id(order_id)
@@ -190,23 +266,18 @@ class LogisticsService:
             for e in events
         ]
 
+    # ── Маршрут ───────────────────────────────────────────────────────
+
     def calculate_route(
         self,
-        origin_id: int,
-        dest_id: int,
-        weight_kg: float,
-        volume_m3: float,
-        is_fragile: bool = False,
-        is_dangerous: bool = False,
-        is_liquid: bool = False,
-        is_perishable: bool = False,
-        is_crushable: bool = False,
-        req_temp_control: bool = False,
+        origin_id: int, dest_id: int,
+        weight_kg: float, volume_m3: float,
+        is_fragile: bool = False, is_dangerous: bool = False,
+        is_liquid: bool = False, is_perishable: bool = False,
+        is_crushable: bool = False, req_temp_control: bool = False,
         strategy_name: str = "cheapest",
     ) -> RouteResponseDTO:
         strategy = _STRATEGIES.get(strategy_name, CheapestRouteStrategy)()
-        if self._strategy and strategy_name not in _STRATEGIES:
-            strategy = self._strategy
 
         origin = self._location_repo.get_by_id(origin_id)
         if origin is None:
@@ -227,23 +298,21 @@ class LogisticsService:
 
         route = strategy.calculate_route(self._graph, origin, destination, cargo)
 
-        segment_dtos = [
-            RouteSegmentDTO(
-                from_location=seg.link.source.name,
-                to_location=seg.link.target.name,
-                transport_type=(
-                    seg.link.transport_type.value
-                    if isinstance(seg.link.transport_type, TransportType)
-                    else seg.link.transport_type
-                ),
-                duration_min=seg.link.duration_min,
-                cost=seg.link.cost_base,
-            )
-            for seg in route.segments
-        ]
-
         return RouteResponseDTO(
-            segments=segment_dtos,
+            segments=[
+                RouteSegmentDTO(
+                    from_location=seg.link.source.name,
+                    to_location=seg.link.target.name,
+                    transport_type=(
+                        seg.link.transport_type.value
+                        if isinstance(seg.link.transport_type, TransportType)
+                        else seg.link.transport_type
+                    ),
+                    duration_min=seg.link.duration_min,
+                    cost=seg.link.cost_base,
+                )
+                for seg in route.segments
+            ],
             total_cost=route.total_cost,
             total_time_min=route.total_time_min,
             estimated_arrival=route.estimated_arrival,

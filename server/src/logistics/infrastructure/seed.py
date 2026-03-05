@@ -197,10 +197,10 @@ def seed_database(session: Session) -> None:
 
     # 3. Пользователи
     users = [
-        UserORM(login="admin",   password_hash="admin_hash",   full_name="Администратор",  role="ADMIN"),
-        UserORM(login="manager", password_hash="manager_hash", full_name="Менеджер Иванов", role="MANAGER"),
-        UserORM(login="client1", password_hash="client_hash",  full_name="Клиент Петров",   role="CLIENT"),
-        UserORM(login="client2", password_hash="client_hash",  full_name="Клиент Сидорова", role="CLIENT"),
+        UserORM(login="admin", password_hash="admin", full_name="Администратор", role="ADMIN"),
+        UserORM(login="manager", password_hash="manager", full_name="Менеджер Иванов", role="MANAGER"),
+        UserORM(login="client1", password_hash="client1", full_name="Клиент Петров", role="CLIENT"),
+        UserORM(login="client2", password_hash="client2", full_name="Клиент Сидорова", role="CLIENT"),
     ]
     session.add_all(users)
     session.flush()

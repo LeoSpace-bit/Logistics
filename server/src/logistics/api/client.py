@@ -1,4 +1,4 @@
-"""Тонкий клиент — расширен для новых категорий груза."""
+"""Тонкий клиент — расширен для webapp."""
 
 from __future__ import annotations
 
@@ -13,9 +13,22 @@ class LogisticsClient:
         self._host = host
         self._port = port
 
+    # ── Аутентификация ────────────────────────────────────────────────
+
+    def login(self, login: str, password: str) -> dict:
+        return self._send_request("login", {"login": login, "password": password})
+
+    def register(self, login: str, password: str, full_name: str) -> dict:
+        return self._send_request("register", {
+            "login": login, "password": password, "full_name": full_name,
+        })
+
+    # ── Заказы ────────────────────────────────────────────────────────
+
     def create_order(
         self, sender_id: int, origin_id: int, dest_id: int,
         weight_kg: float, height_m: float, width_m: float, length_m: float,
+        description: str = "",
         is_fragile: bool = False, is_dangerous: bool = False,
         is_liquid: bool = False, is_perishable: bool = False,
         is_crushable: bool = False, req_temp_control: bool = False,
@@ -23,7 +36,9 @@ class LogisticsClient:
     ) -> dict:
         return self._send_request("create_order", {
             "sender_id": sender_id, "origin_id": origin_id, "dest_id": dest_id,
-            "weight_kg": weight_kg, "height_m": height_m, "width_m": width_m, "length_m": length_m,
+            "weight_kg": weight_kg, "height_m": height_m,
+            "width_m": width_m, "length_m": length_m,
+            "description": description,
             "is_fragile": is_fragile, "is_dangerous": is_dangerous,
             "is_liquid": is_liquid, "is_perishable": is_perishable,
             "is_crushable": is_crushable, "req_temp_control": req_temp_control,
@@ -33,7 +48,17 @@ class LogisticsClient:
     def get_order(self, order_id: str) -> dict:
         return self._send_request("get_order", {"order_id": order_id})
 
-    def update_status(self, order_id: str, new_status: str, comment: str | None = None) -> dict:
+    def list_orders(self, sender_id: int) -> dict:
+        return self._send_request("list_orders", {"sender_id": sender_id})
+
+    def list_all_orders(self) -> dict:
+        return self._send_request("list_all_orders", {})
+
+    # ── Статус ────────────────────────────────────────────────────────
+
+    def update_status(
+        self, order_id: str, new_status: str, comment: str | None = None,
+    ) -> dict:
         return self._send_request("update_status", {
             "order_id": order_id, "new_status": new_status, "comment": comment,
         })
@@ -41,8 +66,11 @@ class LogisticsClient:
     def get_tracking(self, order_id: str) -> dict:
         return self._send_request("get_tracking", {"order_id": order_id})
 
+    # ── Маршрут ───────────────────────────────────────────────────────
+
     def calculate_route(
-        self, origin_id: int, dest_id: int, weight_kg: float, volume_m3: float,
+        self, origin_id: int, dest_id: int,
+        weight_kg: float, volume_m3: float,
         is_fragile: bool = False, is_dangerous: bool = False,
         is_liquid: bool = False, is_perishable: bool = False,
         is_crushable: bool = False, req_temp_control: bool = False,
@@ -57,12 +85,15 @@ class LogisticsClient:
             "strategy": strategy,
         })
 
+    # ── Справочники ───────────────────────────────────────────────────
+
     def list_locations(self) -> dict:
         return self._send_request("list_locations", {})
 
+    # ── Транспорт ─────────────────────────────────────────────────────
+
     def _send_request(self, method: str, params: dict) -> dict:
-        payload = {"method": method, "params": params}
-        data = encode_message(payload)
+        data = encode_message({"method": method, "params": params})
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((self._host, self._port))
             sock.sendall(data)

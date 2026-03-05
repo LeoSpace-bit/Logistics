@@ -53,6 +53,8 @@ class IOrderRepository(ABC):
     def update_status(self, order_id: uuid.UUID, status: OrderStatus) -> bool: ...
     @abstractmethod
     def list_by_sender(self, sender_id: int) -> list[Order]: ...
+    @abstractmethod
+    def list_all(self) -> list[Order]: ...
 
 
 class ICargoRepository(ABC):
@@ -228,6 +230,10 @@ class SqlAlchemyOrderRepository(IOrderRepository):
 
     def list_by_sender(self, sender_id: int) -> list[Order]:
         rows = self._s.query(OrderORM).filter(OrderORM.sender_id == sender_id).all()
+        return [self._to_domain(r) for r in rows]
+
+    def list_all(self) -> list[Order]:
+        rows = self._s.query(OrderORM).order_by(OrderORM.created_at.desc()).all()
         return [self._to_domain(r) for r in rows]
 
 

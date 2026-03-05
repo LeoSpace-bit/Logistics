@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Управление заказом {{ order.id|short_uuid }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('manage_orders') }}">Все заказы</a></li>
+        <li class="breadcrumb-item active">{{ order.id|short_uuid }}</li>
+    </ol>
+</nav>
+
+<div class="row g-4">
+
+    <!-- Информация о заказе -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">📋 Заказ</div>
+            <div class="card-body">
+                <table class="table table-borderless table-sm mb-0">
+                    <tr>
+                        <td class="text-muted">ID</td>
+                        <td><code style="font-size:.75rem">{{ order.id }}</code></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Статус</td>
+                        <td>
+                            <span class="badge bg-{{ order.status|status_color }} fs-6">
+                                {{ order.status|status_label }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr><td class="text-muted">Откуда</td><td>{{ order.origin }}</td></tr>
+                    <tr><td class="text-muted">Куда</td><td>{{ order.destination }}</td></tr>
+                    <tr><td class="text-muted">Вес</td><td>{{ order.cargo_weight_kg }} кг</td></tr>
+                    <tr><td class="text-muted">Стоимость</td><td class="fw-bold">{{ order.total_cost|fmt_money }}</td></tr>
+                    <tr><td class="text-muted">Создан</td><td>{{ order.created_at|fmt_date }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Смена статуса -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">🔄 Изменить статус</div>
+            <div class="card-body">
+                {% if allowed %}
+                <form method="post">
+                    <div class="mb-3">
+                        <label class="form-label">Новый статус</label>
+                        <select name="new_status" class="form-select" required>
+                            {% for st in allowed %}
+                            <option value="{{ st }}">{{ st|status_label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Комментарий</label>
+                        <textarea name="comment" class="form-control" rows="2"
+                                  placeholder="Необязательно"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Обновить статус</button>
+                </form>
+                {% else %}
+                <div class="text-center text-muted py-3">
+                    <p class="mb-0">Заказ в финальном статусе.<br>Изменение невозможно.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- История -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">📍 История</div>
+            <div class="card-body">
+                {% if events %}
+                <div class="tracking-timeline">
+                    {% for ev in events|reverse %}
+                    <div class="tracking-event">
+                        <div>
+                            <span class="badge bg-{{ ev.status|status_color }}">
+                                {{ ev.status|status_label }}
+                            </span>
+                            <small class="text-muted ms-1">{{ ev.event_time|fmt_date }}</small>
+                        </div>
+                        {% if ev.comment %}
+                        <small class="text-muted">{{ ev.comment }}</small>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Нет событий</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

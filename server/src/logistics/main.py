@@ -29,6 +29,7 @@ def create_service(session: Session) -> LogisticsService:
         tracking_repo=SqlAlchemyTrackingRepository(session),
         segment_repo=SqlAlchemyRouteSegmentRepository(session),
         user_repo=SqlAlchemyUserRepository(session),
+        session=session,
     )
 
 

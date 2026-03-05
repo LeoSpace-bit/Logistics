@@ -1,4 +1,4 @@
-"""TCP-сервер — расширен для новых полей груза."""
+"""TCP-сервер — расширен для webapp."""
 
 from __future__ import annotations
 
@@ -10,19 +10,14 @@ from dataclasses import asdict
 from decimal import Decimal
 
 from logistics.api.protocol import (
-    HEADER_SIZE,
-    Request,
-    Response,
-    decode_message,
-    encode_message,
-    read_header,
+    HEADER_SIZE, Request, Response,
+    decode_message, read_header,
 )
 from logistics.service.dto import CargoCreateDTO, OrderCreateDTO, StatusUpdateDTO
 from logistics.service.logistics_service import LogisticsService
 
 
 def _default_serializer(obj):
-    """Сериализация Decimal, UUID, datetime для JSON."""
     if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, uuid.UUID):
@@ -30,7 +25,13 @@ def _default_serializer(obj):
     import datetime as _dt
     if isinstance(obj, (_dt.datetime, _dt.date)):
         return obj.isoformat()
-    raise TypeError(f"Не удалось сериализовать {type(obj)}")
+    raise TypeError(f"Cannot serialize {type(obj)}")
+
+
+def _encode_response(payload: dict) -> bytes:
+    body = json.dumps(payload, ensure_ascii=False, default=_default_serializer).encode("utf-8")
+    header = f"{len(body):>{HEADER_SIZE}d}".encode("utf-8")
+    return header + body
 
 
 class LogisticsServer:
@@ -48,8 +49,7 @@ class LogisticsServer:
         self._server_socket.bind((self._host, self._port))
         self._server_socket.listen(5)
         self._running = True
-        thread = threading.Thread(target=self._accept_loop, daemon=True)
-        thread.start()
+        threading.Thread(target=self._accept_loop, daemon=True).start()
 
     def stop(self) -> None:
         self._running = False
@@ -60,39 +60,34 @@ class LogisticsServer:
     def _accept_loop(self) -> None:
         while self._running:
             try:
-                client_sock, address = self._server_socket.accept()
-                threading.Thread(
-                    target=self._handle_client, args=(client_sock, address), daemon=True,
-                ).start()
+                cs, addr = self._server_socket.accept()
+                threading.Thread(target=self._handle_client, args=(cs, addr), daemon=True).start()
             except OSError:
                 break
 
-    def _handle_client(self, client_socket: socket.socket, address: tuple) -> None:
+    def _handle_client(self, cs: socket.socket, addr: tuple) -> None:
         try:
-            header_data = self._recv_exact(client_socket, HEADER_SIZE)
-            if not header_data:
+            hdr = self._recv_exact(cs, HEADER_SIZE)
+            if not hdr:
                 return
-            body_len = read_header(header_data)
-            body_data = self._recv_exact(client_socket, body_len)
-            if not body_data:
+            body = self._recv_exact(cs, read_header(hdr))
+            if not body:
                 return
-            payload = decode_message(body_data)
+            payload = decode_message(body)
             request = Request(method=payload.get("method", ""), params=payload.get("params", {}))
             response = self._dispatch(request)
-            response_dict = {"status": response.status, "data": response.data, "message": response.message}
-            # Сериализуем через json с обработкой Decimal / UUID / datetime
-            body = json.dumps(response_dict, ensure_ascii=False, default=_default_serializer).encode("utf-8")
-            header = f"{len(body):>{HEADER_SIZE}d}".encode("utf-8")
-            client_socket.sendall(header + body)
+            cs.sendall(_encode_response({
+                "status": response.status,
+                "data": response.data,
+                "message": response.message,
+            }))
         except Exception as exc:
             try:
-                err = json.dumps({"status": "error", "data": None, "message": str(exc)}).encode("utf-8")
-                hdr = f"{len(err):>{HEADER_SIZE}d}".encode("utf-8")
-                client_socket.sendall(hdr + err)
+                cs.sendall(_encode_response({"status": "error", "data": None, "message": str(exc)}))
             except OSError:
                 pass
         finally:
-            client_socket.close()
+            cs.close()
 
     @staticmethod
     def _recv_exact(sock: socket.socket, n: int) -> bytes | None:
@@ -106,9 +101,25 @@ class LogisticsServer:
 
     def _dispatch(self, request: Request) -> Response:
         try:
+            p = request.params
+
             match request.method:
+
+                # ── Аутентификация ────────────────────────────────
+                case "login":
+                    user = self._service.authenticate(p["login"], p["password"])
+                    return Response(status="ok", data=user)
+
+                case "register":
+                    user = self._service.register_user(
+                        login=p["login"],
+                        password=p["password"],
+                        full_name=p.get("full_name", p["login"]),
+                    )
+                    return Response(status="ok", data=user)
+
+                # ── Заказы ────────────────────────────────────────
                 case "create_order":
-                    p = request.params
                     cargo_dto = CargoCreateDTO(
                         weight_kg=p["weight_kg"], height_m=p["height_m"],
                         width_m=p["width_m"], length_m=p["length_m"],
@@ -121,36 +132,45 @@ class LogisticsServer:
                         req_temp_control=p.get("req_temp_control", False),
                     )
                     dto = OrderCreateDTO(
-                        sender_id=p["sender_id"], origin_location_id=p["origin_id"],
-                        dest_location_id=p["dest_id"], cargo=cargo_dto,
+                        sender_id=p["sender_id"],
+                        origin_location_id=p["origin_id"],
+                        dest_location_id=p["dest_id"],
+                        cargo=cargo_dto,
                         receiver_id=p.get("receiver_id"),
                         strategy=p.get("strategy", "cheapest"),
                     )
                     result = self._service.create_order(dto)
-                    return Response(status="ok", data={"id": str(result.id), "status": result.status})
-
-                case "get_order":
-                    oid = uuid.UUID(request.params["order_id"])
-                    result = self._service.get_order(oid)
                     return Response(status="ok", data=asdict(result))
 
+                case "get_order":
+                    result = self._service.get_order(uuid.UUID(p["order_id"]))
+                    return Response(status="ok", data=asdict(result))
+
+                case "list_orders":
+                    orders = self._service.list_orders_by_sender(p["sender_id"])
+                    return Response(status="ok", data={"orders": [asdict(o) for o in orders]})
+
+                case "list_all_orders":
+                    orders = self._service.list_all_orders()
+                    return Response(status="ok", data={"orders": [asdict(o) for o in orders]})
+
+                # ── Статус ────────────────────────────────────────
                 case "update_status":
-                    p = request.params
                     dto = StatusUpdateDTO(
                         order_id=uuid.UUID(p["order_id"]),
                         new_status=p["new_status"],
-                        comment=p.get("comment"), location_id=p.get("location_id"),
+                        comment=p.get("comment"),
+                        location_id=p.get("location_id"),
                     )
                     result = self._service.update_status(dto)
                     return Response(status="ok", data=asdict(result))
 
                 case "get_tracking":
-                    oid = uuid.UUID(request.params["order_id"])
-                    events = self._service.get_tracking_history(oid)
+                    events = self._service.get_tracking_history(uuid.UUID(p["order_id"]))
                     return Response(status="ok", data={"events": [asdict(e) for e in events]})
 
+                # ── Маршрут ───────────────────────────────────────
                 case "calculate_route":
-                    p = request.params
                     result = self._service.calculate_route(
                         origin_id=p["origin_id"], dest_id=p["dest_id"],
                         weight_kg=p["weight_kg"], volume_m3=p["volume_m3"],
@@ -164,16 +184,22 @@ class LogisticsServer:
                     )
                     return Response(status="ok", data=asdict(result))
 
+                # ── Справочники ───────────────────────────────────
                 case "list_locations":
                     locs = self._service._location_repo.get_all()
                     return Response(status="ok", data={
                         "locations": [
-                            {"id": l.id, "name": l.name, "type": l.type.value if hasattr(l.type, 'value') else l.type, "address": l.address}
+                            {
+                                "id": l.id, "name": l.name,
+                                "type": l.type.value if hasattr(l.type, "value") else l.type,
+                                "address": l.address,
+                            }
                             for l in locs
                         ],
                     })
 
                 case _:
                     return Response(status="error", message=f"Неизвестный метод: {request.method}")
+
         except Exception as exc:
             return Response(status="error", message=str(exc))
