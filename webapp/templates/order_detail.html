@@ -9,6 +9,25 @@
     </ol>
 </nav>
 
+{% if no_route %}
+<div class="alert alert-warning d-flex align-items-start" role="alert">
+    <div class="fs-4 me-3">⚠️</div>
+    <div>
+        <strong>Маршрут не найден</strong><br>
+        Для данного типа груза не удалось построить маршрут между выбранными пунктами.
+        Возможные причины:
+        <ul class="mb-0 mt-1">
+            <li>Опасные грузы и жидкости запрещены к авиаперевозке</li>
+            <li>Хрупкие и скоропортящиеся грузы не перевозятся морем</li>
+            <li>Пункт назначения недоступен для данного типа транспорта</li>
+        </ul>
+        <a href="{{ url_for('calculate_route') }}" class="btn btn-sm btn-outline-warning mt-2">
+            Проверить в калькуляторе
+        </a>
+    </div>
+</div>
+{% endif %}
+
 <div class="row g-4">
 
     <!-- Информация -->
@@ -17,18 +36,49 @@
             <div class="card-header">📋 Информация о заказе</div>
             <div class="card-body">
                 <table class="table table-borderless mb-0">
-                    <tr><td class="text-muted" style="width:40%">Трек-номер</td>
-                        <td><code>{{ order.id }}</code></td></tr>
-                    <tr><td class="text-muted">Статус</td>
-                        <td><span class="badge bg-{{ order.status|status_color }} fs-6">
-                            {{ order.status|status_label }}</span></td></tr>
-                    <tr><td class="text-muted">Откуда</td><td>{{ order.origin }}</td></tr>
-                    <tr><td class="text-muted">Куда</td><td>{{ order.destination }}</td></tr>
-                    <tr><td class="text-muted">Вес груза</td><td>{{ order.cargo_weight_kg }} кг</td></tr>
-                    <tr><td class="text-muted">Стоимость</td>
-                        <td class="fw-bold fs-5 text-primary">{{ order.total_cost|fmt_money }}</td></tr>
-                    <tr><td class="text-muted">Создан</td><td>{{ order.created_at|fmt_date }}</td></tr>
-                    <tr><td class="text-muted">Прогноз</td><td>{{ order.estimated_delivery|fmt_date }}</td></tr>
+                    <tr>
+                        <td class="text-muted" style="width:40%">Трек-номер</td>
+                        <td><code>{{ order.id }}</code></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Статус</td>
+                        <td>
+                            <span class="badge bg-{{ order.status|status_color }} fs-6">
+                                {{ order.status|status_label }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Откуда</td>
+                        <td>{{ order.origin }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Куда</td>
+                        <td>{{ order.destination }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Вес груза</td>
+                        <td>{{ order.cargo_weight_kg }} кг</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Стоимость</td>
+                        <td class="fw-bold fs-5
+                            {% if no_route %}text-danger{% else %}text-primary{% endif %}">
+                            {% if no_route %}
+                                Не рассчитана
+                            {% else %}
+                                {{ order.total_cost|fmt_money }}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Создан</td>
+                        <td>{{ order.created_at|fmt_date }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Прогноз</td>
+                        <td>{{ order.estimated_delivery|fmt_date }}</td>
+                    </tr>
                 </table>
             </div>
         </div>
@@ -45,7 +95,8 @@
                     <div class="tracking-event">
                         <div>
                             <span class="badge bg-{{ ev.status|status_color }}">
-                                {{ ev.status|status_label }}</span>
+                                {{ ev.status|status_label }}
+                            </span>
                             <small class="text-muted ms-2">{{ ev.event_time|fmt_date }}</small>
                         </div>
                         {% if ev.comment %}
@@ -75,7 +126,8 @@
                     <span>{{ seg.to_location }}</span>
                     <span class="ms-auto text-nowrap">
                         <span class="badge bg-light text-dark">
-                            {{ seg.transport_type|transport_label }}</span>
+                            {{ seg.transport_type|transport_label }}
+                        </span>
                         <small class="text-muted ms-1">
                             {{ seg.duration_min|fmt_minutes }} · {{ seg.cost|fmt_money }}
                         </small>

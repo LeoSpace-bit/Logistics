@@ -181,7 +181,8 @@ class LogisticsService:
             cargo=cargo, receiver=receiver,
         )
 
-        # Выбор стратегии
+        # ── Расчёт маршрута ──────────────────────────────────────────
+        route_warning: str | None = None
         strategy = self._strategy
         if dto.strategy and dto.strategy in _STRATEGIES:
             strategy = _STRATEGIES[dto.strategy]()
@@ -197,9 +198,10 @@ class LogisticsService:
                     len(route.segments), route.total_cost, route.total_time_min,
                 )
             except RouteNotFoundError as e:
-                logger.warning("Маршрут не найден: %s", e)
+                route_warning = str(e)
+                logger.warning("⚠️ Маршрут не найден: %s", e)
 
-        # Сохранение
+        # ── Сохранение ────────────────────────────────────────────────
         self._order_repo.save(order)
         self._cargo_repo.save(cargo, order.id)
 
@@ -210,12 +212,17 @@ class LogisticsService:
         event = TrackingEvent(
             order_id=order.id, status=OrderStatus.CREATED,
             event_time=order.created_at,
+            comment=route_warning,  # записываем причину в историю
         )
         self._tracking_repo.add_event(event)
         self._commit()
 
         logger.info("✅ Заказ создан: %s, стоимость=%s", order.id, order.total_cost)
-        return self._order_to_dto(order)
+
+        result = self._order_to_dto(order)
+        # Прокидываем предупреждение (серверный dispatch его подхватит)
+        result._route_warning = route_warning  # type: ignore[attr-defined]
+        return result
 
     def get_order(self, order_id: uuid.UUID) -> OrderResponseDTO:
         order = self._order_repo.get_by_id(order_id)

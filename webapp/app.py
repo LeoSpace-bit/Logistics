@@ -256,11 +256,18 @@ def create_order():
 
     if request.method == "POST":
         try:
+            origin_id = int(request.form["origin_id"])
+            dest_id = int(request.form["dest_id"])
+
+            if origin_id == dest_id:
+                flash("Точки отправления и назначения должны отличаться", "warning")
+                return render_template("create_order.html", locations=locations)
+
             data, err = api_call(
                 get_client().create_order,
                 sender_id=session["user"]["id"],
-                origin_id=int(request.form["origin_id"]),
-                dest_id=int(request.form["dest_id"]),
+                origin_id=origin_id,
+                dest_id=dest_id,
                 weight_kg=float(request.form["weight_kg"]),
                 height_m=float(request.form["height_m"]),
                 width_m=float(request.form["width_m"]),
@@ -279,7 +286,19 @@ def create_order():
                 return render_template("create_order.html", locations=locations)
 
             order_id = data.get("id", "")
-            flash("Заказ успешно создан!", "success")
+
+            # Проверяем предупреждение о маршруте
+            route_warning = data.get("route_warning")
+            if route_warning:
+                flash(f"⚠️ {route_warning}", "warning")
+                flash("Заказ создан, но маршрут и стоимость не рассчитаны.", "warning")
+            else:
+                cost = data.get("total_cost")
+                if cost and cost != "None":
+                    flash(f"Заказ создан! Стоимость: {fmt_money(cost)}", "success")
+                else:
+                    flash("Заказ создан!", "success")
+
             return redirect(url_for("order_detail", order_id=order_id))
 
         except (ValueError, KeyError) as e:
@@ -299,13 +318,18 @@ def order_detail(order_id: str):
     tracking_data, _ = api_call(get_client().get_tracking, order_id)
     events = tracking_data.get("events", []) if tracking_data else []
 
-    # Получаем маршрут заказа
     route_data, _ = api_call(get_client().get_order_route, order_id)
     segments = route_data.get("segments", []) if route_data else []
+
+    # Проверяем, есть ли маршрут
+    has_route = len(segments) > 0
+    total_cost = data.get("total_cost")
+    no_route = not has_route and (total_cost is None or total_cost == "None")
 
     return render_template(
         "order_detail.html",
         order=data, events=events, segments=segments,
+        no_route=no_route,
     )
 
 
@@ -331,27 +355,34 @@ def calculate_route():
             "req_temp_control": "req_temp_control" in request.form,
             "strategy": request.form.get("strategy", "cheapest"),
         }
-        try:
-            data, err = api_call(
-                get_client().calculate_route,
-                origin_id=int(form["origin_id"]),
-                dest_id=int(form["dest_id"]),
-                weight_kg=float(form["weight_kg"]),
-                volume_m3=float(form["volume_m3"]),
-                is_fragile=form["is_fragile"],
-                is_dangerous=form["is_dangerous"],
-                is_liquid=form["is_liquid"],
-                is_perishable=form["is_perishable"],
-                is_crushable=form["is_crushable"],
-                req_temp_control=form["req_temp_control"],
-                strategy=form["strategy"],
-            )
-            if err:
-                flash(err, "danger")
-            else:
-                result = data
-        except (ValueError, KeyError) as e:
-            flash(f"Ошибка в данных: {e}", "danger")
+
+        origin_id = form["origin_id"]
+        dest_id = form["dest_id"]
+
+        if origin_id == dest_id:
+            flash("Точки отправления и назначения должны отличаться", "warning")
+        else:
+            try:
+                data, err = api_call(
+                    get_client().calculate_route,
+                    origin_id=int(origin_id),
+                    dest_id=int(dest_id),
+                    weight_kg=float(form["weight_kg"]),
+                    volume_m3=float(form["volume_m3"]),
+                    is_fragile=form["is_fragile"],
+                    is_dangerous=form["is_dangerous"],
+                    is_liquid=form["is_liquid"],
+                    is_perishable=form["is_perishable"],
+                    is_crushable=form["is_crushable"],
+                    req_temp_control=form["req_temp_control"],
+                    strategy=form["strategy"],
+                )
+                if err:
+                    flash(f"🚫 {err}", "danger")
+                else:
+                    result = data
+            except (ValueError, KeyError) as e:
+                flash(f"Ошибка в данных: {e}", "danger")
 
     return render_template(
         "calculate_route.html",

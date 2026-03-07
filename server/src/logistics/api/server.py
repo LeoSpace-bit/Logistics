@@ -153,7 +153,12 @@ class LogisticsServer:
                         strategy=p.get("strategy", "cheapest"),
                     )
                     result = self._service.create_order(dto)
-                    return Response(status="ok", data=asdict(result))
+                    resp = asdict(result)
+                    # Прокидываем предупреждение о маршруте
+                    warning = getattr(result, "_route_warning", None)
+                    if warning:
+                        resp["route_warning"] = warning
+                    return Response(status="ok", data=resp)
 
                 case "get_order":
                     result = self._service.get_order(uuid.UUID(p["order_id"]))
