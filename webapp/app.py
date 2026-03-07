@@ -1,4 +1,4 @@
-"""Flask Web Application — тонкий клиент логистического сервиса."""
+"""Flask Web Application — полная версия с исправлениями."""
 
 from __future__ import annotations
 
@@ -13,8 +13,6 @@ from flask import (
 
 from logistics.api.client import LogisticsClient
 
-# ── Приложение ────────────────────────────────────────────────────────
-
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-logistics-2025")
 
@@ -26,23 +24,16 @@ def get_client() -> LogisticsClient:
     return LogisticsClient(host=API_HOST, port=API_PORT)
 
 
-# ── Обёртка для вызовов API ───────────────────────────────────────────
-
-
 def api_call(func, *args, **kwargs):
-    """Вызвать метод API-клиента, вернуть (data, error)."""
     try:
         result = func(*args, **kwargs)
         if result.get("status") == "error":
             return None, result.get("message", "Неизвестная ошибка")
         return result.get("data"), None
     except ConnectionRefusedError:
-        return None, "Сервис недоступен. Проверьте, запущен ли TCP-сервер."
+        return None, "Сервис недоступен. Запустите TCP-сервер: python -m logistics serve"
     except Exception as e:
         return None, str(e)
-
-
-# ── Декораторы ────────────────────────────────────────────────────────
 
 
 def login_required(f):
@@ -60,7 +51,6 @@ def role_required(*roles):
         @wraps(f)
         def decorated(*args, **kwargs):
             if "user" not in session:
-                flash("Пожалуйста, войдите в систему", "warning")
                 return redirect(url_for("login"))
             if session["user"]["role"] not in roles:
                 flash("Недостаточно прав", "danger")
@@ -69,8 +59,6 @@ def role_required(*roles):
         return decorated
     return decorator
 
-
-# ── Фильтры Jinja2 ───────────────────────────────────────────────────
 
 STATUS_LABELS = {
     "CREATED": "Создан",
@@ -98,6 +86,18 @@ TRANSPORT_LABELS = {
     "AIR": "✈️ Авиа",
     "SEA": "🚢 Море",
 }
+
+# Допустимые переходы (менеджер)
+MANAGER_TRANSITIONS = {
+    "CREATED": ["PROCESSING", "CANCELLED"],
+    "PROCESSING": ["WAITING_DROP_OFF", "CANCELLED"],
+    "WAITING_DROP_OFF": ["IN_TRANSIT", "CANCELLED"],
+    "IN_TRANSIT": ["ARRIVED", "CANCELLED"],
+    "ARRIVED": ["DELIVERED", "CANCELLED"],
+}
+
+# Все статусы (для админа)
+ALL_STATUSES = list(STATUS_LABELS.keys())
 
 
 @app.template_filter("fmt_date")
@@ -159,8 +159,6 @@ def short_uuid(value):
     return s[:8] + "…" if len(s) > 8 else s
 
 
-# ── Контекст для всех шаблонов ────────────────────────────────────────
-
 @app.context_processor
 def inject_globals():
     return {
@@ -173,17 +171,12 @@ def inject_globals():
 #  МАРШРУТЫ
 # =====================================================================
 
-
-# ── Главная ───────────────────────────────────────────────────────────
-
 @app.route("/")
 def index():
     if "user" in session:
         return redirect(url_for("dashboard"))
     return render_template("index.html")
 
-
-# ── Аутентификация ────────────────────────────────────────────────────
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -193,16 +186,13 @@ def login():
         if not login_val or not password:
             flash("Заполните все поля", "warning")
             return render_template("login.html")
-
         data, err = api_call(get_client().login, login_val, password)
         if err:
             flash(err, "danger")
             return render_template("login.html")
-
         session["user"] = data
         flash(f"Добро пожаловать, {data.get('full_name', data['login'])}!", "success")
         return redirect(url_for("dashboard"))
-
     return render_template("login.html")
 
 
@@ -213,25 +203,19 @@ def register():
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
         full_name = request.form.get("full_name", "").strip()
-
         if not login_val or not password:
             flash("Заполните обязательные поля", "warning")
             return render_template("register.html")
         if password != password2:
             flash("Пароли не совпадают", "warning")
             return render_template("register.html")
-
-        data, err = api_call(
-            get_client().register, login_val, password, full_name or login_val,
-        )
+        data, err = api_call(get_client().register, login_val, password, full_name or login_val)
         if err:
             flash(err, "danger")
             return render_template("register.html")
-
         session["user"] = data
         flash("Регистрация успешна!", "success")
         return redirect(url_for("dashboard"))
-
     return render_template("register.html")
 
 
@@ -242,47 +226,32 @@ def logout():
     return redirect(url_for("index"))
 
 
-# ── Дашборд ──────────────────────────────────────────────────────────
-
 @app.route("/dashboard")
 @login_required
 def dashboard():
     user = session["user"]
-    orders = []
-
     if user["role"] in ("MANAGER", "ADMIN"):
         data, err = api_call(get_client().list_all_orders)
     else:
         data, err = api_call(get_client().list_orders, user["id"])
-
-    if data:
-        orders = data.get("orders", [])
-
+    orders = data.get("orders", []) if data else []
     return render_template("dashboard.html", orders=orders[:10])
 
-
-# ── Мои заказы ────────────────────────────────────────────────────────
 
 @app.route("/orders")
 @login_required
 def my_orders():
-    user = session["user"]
-    data, err = api_call(get_client().list_orders, user["id"])
+    data, err = api_call(get_client().list_orders, session["user"]["id"])
+    orders = data.get("orders", []) if data else []
     if err:
         flash(err, "danger")
-        orders = []
-    else:
-        orders = data.get("orders", [])
     return render_template("my_orders.html", orders=orders)
 
-
-# ── Создание заказа ───────────────────────────────────────────────────
 
 @app.route("/orders/create", methods=["GET", "POST"])
 @login_required
 def create_order():
-    # Получаем локации для формы
-    loc_data, loc_err = api_call(get_client().list_locations)
+    loc_data, _ = api_call(get_client().list_locations)
     locations = loc_data.get("locations", []) if loc_data else []
 
     if request.method == "POST":
@@ -319,8 +288,6 @@ def create_order():
     return render_template("create_order.html", locations=locations)
 
 
-# ── Детали заказа ─────────────────────────────────────────────────────
-
 @app.route("/orders/<order_id>")
 @login_required
 def order_detail(order_id: str):
@@ -332,10 +299,15 @@ def order_detail(order_id: str):
     tracking_data, _ = api_call(get_client().get_tracking, order_id)
     events = tracking_data.get("events", []) if tracking_data else []
 
-    return render_template("order_detail.html", order=data, events=events)
+    # Получаем маршрут заказа
+    route_data, _ = api_call(get_client().get_order_route, order_id)
+    segments = route_data.get("segments", []) if route_data else []
 
+    return render_template(
+        "order_detail.html",
+        order=data, events=events, segments=segments,
+    )
 
-# ── Калькулятор маршрута ──────────────────────────────────────────────
 
 @app.route("/calculate", methods=["GET", "POST"])
 @login_required
@@ -343,22 +315,36 @@ def calculate_route():
     loc_data, _ = api_call(get_client().list_locations)
     locations = loc_data.get("locations", []) if loc_data else []
     result = None
+    form = {}
 
     if request.method == "POST":
+        form = {
+            "origin_id": request.form.get("origin_id", ""),
+            "dest_id": request.form.get("dest_id", ""),
+            "weight_kg": request.form.get("weight_kg", "10"),
+            "volume_m3": request.form.get("volume_m3", "0.1"),
+            "is_fragile": "is_fragile" in request.form,
+            "is_dangerous": "is_dangerous" in request.form,
+            "is_liquid": "is_liquid" in request.form,
+            "is_perishable": "is_perishable" in request.form,
+            "is_crushable": "is_crushable" in request.form,
+            "req_temp_control": "req_temp_control" in request.form,
+            "strategy": request.form.get("strategy", "cheapest"),
+        }
         try:
             data, err = api_call(
                 get_client().calculate_route,
-                origin_id=int(request.form["origin_id"]),
-                dest_id=int(request.form["dest_id"]),
-                weight_kg=float(request.form["weight_kg"]),
-                volume_m3=float(request.form["volume_m3"]),
-                is_fragile="is_fragile" in request.form,
-                is_dangerous="is_dangerous" in request.form,
-                is_liquid="is_liquid" in request.form,
-                is_perishable="is_perishable" in request.form,
-                is_crushable="is_crushable" in request.form,
-                req_temp_control="req_temp_control" in request.form,
-                strategy=request.form.get("strategy", "cheapest"),
+                origin_id=int(form["origin_id"]),
+                dest_id=int(form["dest_id"]),
+                weight_kg=float(form["weight_kg"]),
+                volume_m3=float(form["volume_m3"]),
+                is_fragile=form["is_fragile"],
+                is_dangerous=form["is_dangerous"],
+                is_liquid=form["is_liquid"],
+                is_perishable=form["is_perishable"],
+                is_crushable=form["is_crushable"],
+                req_temp_control=form["req_temp_control"],
+                strategy=form["strategy"],
             )
             if err:
                 flash(err, "danger")
@@ -367,42 +353,43 @@ def calculate_route():
         except (ValueError, KeyError) as e:
             flash(f"Ошибка в данных: {e}", "danger")
 
-    return render_template("calculate_route.html", locations=locations, result=result)
+    return render_template(
+        "calculate_route.html",
+        locations=locations, result=result, form=form,
+    )
 
-
-# ── Менеджер: все заказы ──────────────────────────────────────────────
 
 @app.route("/manage/orders")
 @role_required("MANAGER", "ADMIN")
 def manage_orders():
     data, err = api_call(get_client().list_all_orders)
+    orders = data.get("orders", []) if data else []
     if err:
         flash(err, "danger")
-        orders = []
-    else:
-        orders = data.get("orders", [])
 
-    # Фильтр по статусу
     status_filter = request.args.get("status", "")
     if status_filter:
         orders = [o for o in orders if o.get("status") == status_filter]
 
     return render_template(
-        "manage_orders.html", orders=orders,
-        status_filter=status_filter,
+        "manage_orders.html", orders=orders, status_filter=status_filter,
     )
 
-
-# ── Менеджер: управление заказом ──────────────────────────────────────
 
 @app.route("/manage/orders/<order_id>", methods=["GET", "POST"])
 @role_required("MANAGER", "ADMIN")
 def manage_order(order_id: str):
+    user = session["user"]
+    is_admin = user["role"] == "ADMIN"
+
     if request.method == "POST":
         new_status = request.form.get("new_status", "")
         comment = request.form.get("comment", "")
         data, err = api_call(
-            get_client().update_status, order_id, new_status, comment or None,
+            get_client().update_status,
+            order_id, new_status,
+            comment=comment or None,
+            force=is_admin,
         )
         if err:
             flash(err, "danger")
@@ -418,23 +405,22 @@ def manage_order(order_id: str):
     tracking_data, _ = api_call(get_client().get_tracking, order_id)
     events = tracking_data.get("events", []) if tracking_data else []
 
-    # Определяем допустимые переходы
+    route_data, _ = api_call(get_client().get_order_route, order_id)
+    segments = route_data.get("segments", []) if route_data else []
+
     current = data.get("status", "")
-    transitions = {
-        "CREATED": ["PROCESSING", "CANCELLED"],
-        "PROCESSING": ["WAITING_DROP_OFF", "CANCELLED"],
-        "WAITING_DROP_OFF": ["IN_TRANSIT", "CANCELLED"],
-        "IN_TRANSIT": ["ARRIVED", "CANCELLED"],
-        "ARRIVED": ["DELIVERED", "CANCELLED"],
-    }
-    allowed = transitions.get(current, [])
+
+    if is_admin:
+        allowed = [s for s in ALL_STATUSES if s != current]
+    else:
+        allowed = MANAGER_TRANSITIONS.get(current, [])
 
     return render_template(
-        "manage_order.html", order=data, events=events, allowed=allowed,
+        "manage_order.html",
+        order=data, events=events, segments=segments,
+        allowed=allowed, is_admin=is_admin,
     )
 
-
-# ── Запуск ────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5000)

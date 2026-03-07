@@ -11,28 +11,22 @@
 
 <div class="row g-4">
 
-    <!-- Информация о заказе -->
+    <!-- Информация -->
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">📋 Заказ</div>
             <div class="card-body">
                 <table class="table table-borderless table-sm mb-0">
-                    <tr>
-                        <td class="text-muted">ID</td>
-                        <td><code style="font-size:.75rem">{{ order.id }}</code></td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Статус</td>
-                        <td>
-                            <span class="badge bg-{{ order.status|status_color }} fs-6">
-                                {{ order.status|status_label }}
-                            </span>
-                        </td>
-                    </tr>
+                    <tr><td class="text-muted">ID</td>
+                        <td><code style="font-size:.75rem">{{ order.id }}</code></td></tr>
+                    <tr><td class="text-muted">Статус</td>
+                        <td><span class="badge bg-{{ order.status|status_color }} fs-6">
+                            {{ order.status|status_label }}</span></td></tr>
                     <tr><td class="text-muted">Откуда</td><td>{{ order.origin }}</td></tr>
                     <tr><td class="text-muted">Куда</td><td>{{ order.destination }}</td></tr>
                     <tr><td class="text-muted">Вес</td><td>{{ order.cargo_weight_kg }} кг</td></tr>
-                    <tr><td class="text-muted">Стоимость</td><td class="fw-bold">{{ order.total_cost|fmt_money }}</td></tr>
+                    <tr><td class="text-muted">Стоимость</td>
+                        <td class="fw-bold">{{ order.total_cost|fmt_money }}</td></tr>
                     <tr><td class="text-muted">Создан</td><td>{{ order.created_at|fmt_date }}</td></tr>
                 </table>
             </div>
@@ -42,7 +36,12 @@
     <!-- Смена статуса -->
     <div class="col-md-4">
         <div class="card">
-            <div class="card-header">🔄 Изменить статус</div>
+            <div class="card-header">
+                🔄 Изменить статус
+                {% if is_admin %}
+                <span class="badge bg-danger ms-1">ADMIN</span>
+                {% endif %}
+            </div>
             <div class="card-body">
                 {% if allowed %}
                 <form method="post">
@@ -50,9 +49,19 @@
                         <label class="form-label">Новый статус</label>
                         <select name="new_status" class="form-select" required>
                             {% for st in allowed %}
-                            <option value="{{ st }}">{{ st|status_label }}</option>
+                            <option value="{{ st }}">
+                                {{ st|status_label }}
+                                {% if is_admin and st not in ['PROCESSING','WAITING_DROP_OFF','IN_TRANSIT','ARRIVED','DELIVERED','CANCELLED'] %}
+                                ⚠️
+                                {% endif %}
+                            </option>
                             {% endfor %}
                         </select>
+                        {% if is_admin %}
+                        <div class="form-text text-danger">
+                            Режим администратора: доступны любые переходы
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Комментарий</label>
@@ -74,15 +83,14 @@
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">📍 История</div>
-            <div class="card-body">
+            <div class="card-body" style="max-height:400px; overflow-y:auto;">
                 {% if events %}
                 <div class="tracking-timeline">
                     {% for ev in events|reverse %}
                     <div class="tracking-event">
                         <div>
                             <span class="badge bg-{{ ev.status|status_color }}">
-                                {{ ev.status|status_label }}
-                            </span>
+                                {{ ev.status|status_label }}</span>
                             <small class="text-muted ms-1">{{ ev.event_time|fmt_date }}</small>
                         </div>
                         {% if ev.comment %}
@@ -97,6 +105,32 @@
             </div>
         </div>
     </div>
+
+    <!-- Маршрут -->
+    {% if segments %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">🗺️ Маршрут ({{ segments|length }} сегм.)</div>
+            <div class="card-body">
+                {% for seg in segments %}
+                <div class="route-segment">
+                    <span class="badge bg-secondary">{{ loop.index }}</span>
+                    <span class="ms-2">{{ seg.from_location }}</span>
+                    <span class="route-arrow">→</span>
+                    <span>{{ seg.to_location }}</span>
+                    <span class="ms-auto text-nowrap">
+                        <span class="badge bg-light text-dark">
+                            {{ seg.transport_type|transport_label }}</span>
+                        <small class="text-muted ms-1">
+                            {{ seg.duration_min|fmt_minutes }} · {{ seg.cost|fmt_money }}
+                        </small>
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
 </div>
 {% endblock %}

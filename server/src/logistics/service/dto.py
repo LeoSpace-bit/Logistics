@@ -1,4 +1,4 @@
-"""Data Transfer Objects — расширены для всех категорий груза."""
+"""Data Transfer Objects."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class OrderCreateDTO:
     dest_location_id: int
     cargo: CargoCreateDTO
     receiver_id: int | None = None
-    strategy: str = "cheapest"  # "cheapest" | "fastest"
+    strategy: str = "cheapest"
 
 
 @dataclass
@@ -76,3 +76,4 @@ class StatusUpdateDTO:
     new_status: str
     comment: str | None = None
     location_id: int | None = None
+    force: bool = False                 # для ADMIN — любой переход

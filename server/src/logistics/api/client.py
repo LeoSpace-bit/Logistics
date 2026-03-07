@@ -1,4 +1,4 @@
-"""Тонкий клиент — расширен для webapp."""
+"""Тонкий клиент."""
 
 from __future__ import annotations
 
@@ -13,8 +13,6 @@ class LogisticsClient:
         self._host = host
         self._port = port
 
-    # ── Аутентификация ────────────────────────────────────────────────
-
     def login(self, login: str, password: str) -> dict:
         return self._send_request("login", {"login": login, "password": password})
 
@@ -22,8 +20,6 @@ class LogisticsClient:
         return self._send_request("register", {
             "login": login, "password": password, "full_name": full_name,
         })
-
-    # ── Заказы ────────────────────────────────────────────────────────
 
     def create_order(
         self, sender_id: int, origin_id: int, dest_id: int,
@@ -48,25 +44,26 @@ class LogisticsClient:
     def get_order(self, order_id: str) -> dict:
         return self._send_request("get_order", {"order_id": order_id})
 
+    def get_order_route(self, order_id: str) -> dict:
+        return self._send_request("get_order_route", {"order_id": order_id})
+
     def list_orders(self, sender_id: int) -> dict:
         return self._send_request("list_orders", {"sender_id": sender_id})
 
     def list_all_orders(self) -> dict:
         return self._send_request("list_all_orders", {})
 
-    # ── Статус ────────────────────────────────────────────────────────
-
     def update_status(
-        self, order_id: str, new_status: str, comment: str | None = None,
+        self, order_id: str, new_status: str,
+        comment: str | None = None, force: bool = False,
     ) -> dict:
         return self._send_request("update_status", {
-            "order_id": order_id, "new_status": new_status, "comment": comment,
+            "order_id": order_id, "new_status": new_status,
+            "comment": comment, "force": force,
         })
 
     def get_tracking(self, order_id: str) -> dict:
         return self._send_request("get_tracking", {"order_id": order_id})
-
-    # ── Маршрут ───────────────────────────────────────────────────────
 
     def calculate_route(
         self, origin_id: int, dest_id: int,
@@ -85,12 +82,8 @@ class LogisticsClient:
             "strategy": strategy,
         })
 
-    # ── Справочники ───────────────────────────────────────────────────
-
     def list_locations(self) -> dict:
         return self._send_request("list_locations", {})
-
-    # ── Транспорт ─────────────────────────────────────────────────────
 
     def _send_request(self, method: str, params: dict) -> dict:
         data = encode_message({"method": method, "params": params})

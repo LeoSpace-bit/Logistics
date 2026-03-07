@@ -17,42 +17,18 @@
             <div class="card-header">📋 Информация о заказе</div>
             <div class="card-body">
                 <table class="table table-borderless mb-0">
-                    <tr>
-                        <td class="text-muted" style="width:40%">Трек-номер</td>
-                        <td><code>{{ order.id }}</code></td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Статус</td>
-                        <td>
-                            <span class="badge bg-{{ order.status|status_color }} fs-6">
-                                {{ order.status|status_label }}
-                            </span>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Откуда</td>
-                        <td>{{ order.origin }}</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Куда</td>
-                        <td>{{ order.destination }}</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Вес груза</td>
-                        <td>{{ order.cargo_weight_kg }} кг</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Стоимость</td>
-                        <td class="fw-bold">{{ order.total_cost|fmt_money }}</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Создан</td>
-                        <td>{{ order.created_at|fmt_date }}</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Прогноз доставки</td>
-                        <td>{{ order.estimated_delivery|fmt_date }}</td>
-                    </tr>
+                    <tr><td class="text-muted" style="width:40%">Трек-номер</td>
+                        <td><code>{{ order.id }}</code></td></tr>
+                    <tr><td class="text-muted">Статус</td>
+                        <td><span class="badge bg-{{ order.status|status_color }} fs-6">
+                            {{ order.status|status_label }}</span></td></tr>
+                    <tr><td class="text-muted">Откуда</td><td>{{ order.origin }}</td></tr>
+                    <tr><td class="text-muted">Куда</td><td>{{ order.destination }}</td></tr>
+                    <tr><td class="text-muted">Вес груза</td><td>{{ order.cargo_weight_kg }} кг</td></tr>
+                    <tr><td class="text-muted">Стоимость</td>
+                        <td class="fw-bold fs-5 text-primary">{{ order.total_cost|fmt_money }}</td></tr>
+                    <tr><td class="text-muted">Создан</td><td>{{ order.created_at|fmt_date }}</td></tr>
+                    <tr><td class="text-muted">Прогноз</td><td>{{ order.estimated_delivery|fmt_date }}</td></tr>
                 </table>
             </div>
         </div>
@@ -69,8 +45,7 @@
                     <div class="tracking-event">
                         <div>
                             <span class="badge bg-{{ ev.status|status_color }}">
-                                {{ ev.status|status_label }}
-                            </span>
+                                {{ ev.status|status_label }}</span>
                             <small class="text-muted ms-2">{{ ev.event_time|fmt_date }}</small>
                         </div>
                         {% if ev.comment %}
@@ -85,6 +60,32 @@
             </div>
         </div>
     </div>
+
+    <!-- Маршрут -->
+    {% if segments %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">🗺️ Маршрут ({{ segments|length }} сегм.)</div>
+            <div class="card-body">
+                {% for seg in segments %}
+                <div class="route-segment">
+                    <span class="badge bg-secondary">{{ loop.index }}</span>
+                    <span class="ms-2">{{ seg.from_location }}</span>
+                    <span class="route-arrow">→</span>
+                    <span>{{ seg.to_location }}</span>
+                    <span class="ms-auto text-nowrap">
+                        <span class="badge bg-light text-dark">
+                            {{ seg.transport_type|transport_label }}</span>
+                        <small class="text-muted ms-1">
+                            {{ seg.duration_min|fmt_minutes }} · {{ seg.cost|fmt_money }}
+                        </small>
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
 </div>
 {% endblock %}

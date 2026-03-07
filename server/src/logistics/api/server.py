@@ -1,8 +1,9 @@
-"""TCP-сервер — расширен для webapp."""
+"""TCP-сервер с логированием."""
 
 from __future__ import annotations
 
 import json
+import logging
 import socket
 import threading
 import uuid
@@ -15,6 +16,8 @@ from logistics.api.protocol import (
 )
 from logistics.service.dto import CargoCreateDTO, OrderCreateDTO, StatusUpdateDTO
 from logistics.service.logistics_service import LogisticsService
+
+logger = logging.getLogger("logistics.server")
 
 
 def _default_serializer(obj):
@@ -61,7 +64,9 @@ class LogisticsServer:
         while self._running:
             try:
                 cs, addr = self._server_socket.accept()
-                threading.Thread(target=self._handle_client, args=(cs, addr), daemon=True).start()
+                threading.Thread(
+                    target=self._handle_client, args=(cs, addr), daemon=True,
+                ).start()
             except OSError:
                 break
 
@@ -74,16 +79,27 @@ class LogisticsServer:
             if not body:
                 return
             payload = decode_message(body)
-            request = Request(method=payload.get("method", ""), params=payload.get("params", {}))
+            request = Request(
+                method=payload.get("method", ""),
+                params=payload.get("params", {}),
+            )
+            logger.info("← %s:%d  method=%s", addr[0], addr[1], request.method)
             response = self._dispatch(request)
+            if response.status == "error":
+                logger.warning("→ ERROR: %s", response.message)
+            else:
+                logger.info("→ OK")
             cs.sendall(_encode_response({
                 "status": response.status,
                 "data": response.data,
                 "message": response.message,
             }))
         except Exception as exc:
+            logger.exception("Ошибка обработки клиента %s:%d", *addr)
             try:
-                cs.sendall(_encode_response({"status": "error", "data": None, "message": str(exc)}))
+                cs.sendall(_encode_response({
+                    "status": "error", "data": None, "message": str(exc),
+                }))
             except OSError:
                 pass
         finally:
@@ -105,20 +121,17 @@ class LogisticsServer:
 
             match request.method:
 
-                # ── Аутентификация ────────────────────────────────
                 case "login":
                     user = self._service.authenticate(p["login"], p["password"])
                     return Response(status="ok", data=user)
 
                 case "register":
                     user = self._service.register_user(
-                        login=p["login"],
-                        password=p["password"],
+                        login=p["login"], password=p["password"],
                         full_name=p.get("full_name", p["login"]),
                     )
                     return Response(status="ok", data=user)
 
-                # ── Заказы ────────────────────────────────────────
                 case "create_order":
                     cargo_dto = CargoCreateDTO(
                         weight_kg=p["weight_kg"], height_m=p["height_m"],
@@ -146,6 +159,12 @@ class LogisticsServer:
                     result = self._service.get_order(uuid.UUID(p["order_id"]))
                     return Response(status="ok", data=asdict(result))
 
+                case "get_order_route":
+                    segments = self._service.get_order_route(uuid.UUID(p["order_id"]))
+                    return Response(status="ok", data={
+                        "segments": [asdict(s) for s in segments],
+                    })
+
                 case "list_orders":
                     orders = self._service.list_orders_by_sender(p["sender_id"])
                     return Response(status="ok", data={"orders": [asdict(o) for o in orders]})
@@ -154,22 +173,23 @@ class LogisticsServer:
                     orders = self._service.list_all_orders()
                     return Response(status="ok", data={"orders": [asdict(o) for o in orders]})
 
-                # ── Статус ────────────────────────────────────────
                 case "update_status":
                     dto = StatusUpdateDTO(
                         order_id=uuid.UUID(p["order_id"]),
                         new_status=p["new_status"],
                         comment=p.get("comment"),
                         location_id=p.get("location_id"),
+                        force=p.get("force", False),
                     )
                     result = self._service.update_status(dto)
                     return Response(status="ok", data=asdict(result))
 
                 case "get_tracking":
                     events = self._service.get_tracking_history(uuid.UUID(p["order_id"]))
-                    return Response(status="ok", data={"events": [asdict(e) for e in events]})
+                    return Response(status="ok", data={
+                        "events": [asdict(e) for e in events],
+                    })
 
-                # ── Маршрут ───────────────────────────────────────
                 case "calculate_route":
                     result = self._service.calculate_route(
                         origin_id=p["origin_id"], dest_id=p["dest_id"],
@@ -184,7 +204,6 @@ class LogisticsServer:
                     )
                     return Response(status="ok", data=asdict(result))
 
-                # ── Справочники ───────────────────────────────────
                 case "list_locations":
                     locs = self._service._location_repo.get_all()
                     return Response(status="ok", data={

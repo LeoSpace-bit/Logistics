@@ -1,4 +1,4 @@
-"""Доменные модели (чистые объекты без привязки к ORM)."""
+"""Доменные модели."""
 
 from __future__ import annotations
 
@@ -17,8 +17,6 @@ from logistics.domain.exceptions import (
     InvalidCargoError,
     InvalidStatusTransitionError,
 )
-
-# ── Допустимые переходы статуса ──────────────────────────────────────
 
 _VALID_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.CREATED: {OrderStatus.PROCESSING, OrderStatus.CANCELLED},
@@ -53,12 +51,6 @@ class Location:
 
 @dataclass
 class Cargo:
-    """Груз заказа — расширенные категории.
-
-    Категории: хрупкий, опасный, жидкость, скоропортящийся,
-    мнущийся, требующий температурного контроля.
-    """
-
     weight_kg: float
     volume_m3: float
     id: int | None = None
@@ -79,7 +71,6 @@ class Cargo:
             raise InvalidCargoError(
                 f"Объём груза должен быть положительным, получено: {self.volume_m3}",
             )
-        # скоропортящийся груз обязан иметь температурный контроль
         if self.is_perishable and not self.req_temp_control:
             self.req_temp_control = True
         return True
@@ -87,8 +78,6 @@ class Cargo:
 
 @dataclass
 class TransportLink:
-    """Ребро графа — ограничения расширены под все категории груза."""
-
     source: Location
     target: Location
     transport_type: TransportType
@@ -106,7 +95,6 @@ class TransportLink:
     allows_temp_control: bool = False
 
     def can_transport(self, cargo: Cargo) -> bool:
-        """Проверить все ограничения ребра для данного груза."""
         if self.max_weight_kg is not None and cargo.weight_kg > self.max_weight_kg:
             return False
         if self.max_volume_m3 is not None and cargo.volume_m3 > self.max_volume_m3:
@@ -168,12 +156,16 @@ class Order:
         self.estimated_delivery = estimated_delivery
         self.created_at = created_at or datetime.now()
 
-    def update_status(self, new_status: OrderStatus) -> None:
-        allowed = _VALID_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise InvalidStatusTransitionError(
-                f"Переход {self.status.value} → {new_status.value} недопустим",
-            )
+    def update_status(
+        self, new_status: OrderStatus, *, force: bool = False,
+    ) -> None:
+        """Обновить статус. force=True пропускает проверку переходов (для ADMIN)."""
+        if not force:
+            allowed = _VALID_TRANSITIONS.get(self.status, set())
+            if new_status not in allowed:
+                raise InvalidStatusTransitionError(
+                    f"Переход {self.status.value} → {new_status.value} недопустим",
+                )
         self.status = new_status
 
     def get_tracking_info(self) -> str:

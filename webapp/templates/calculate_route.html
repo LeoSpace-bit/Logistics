@@ -9,13 +9,16 @@
         <div class="card">
             <div class="card-header">Параметры</div>
             <div class="card-body">
-                <form method="post">
+                <form method="post" id="calcForm">
                     <div class="mb-3">
                         <label class="form-label">Откуда</label>
                         <select name="origin_id" class="form-select" required>
                             <option value="">Выберите</option>
                             {% for loc in locations %}
-                            <option value="{{ loc.id }}">{{ loc.name }}</option>
+                            <option value="{{ loc.id }}"
+                                {% if form.get('origin_id')|string == loc.id|string %}selected{% endif %}>
+                                {{ loc.name }}
+                            </option>
                             {% endfor %}
                         </select>
                     </div>
@@ -24,7 +27,10 @@
                         <select name="dest_id" class="form-select" required>
                             <option value="">Выберите</option>
                             {% for loc in locations %}
-                            <option value="{{ loc.id }}">{{ loc.name }}</option>
+                            <option value="{{ loc.id }}"
+                                {% if form.get('dest_id')|string == loc.id|string %}selected{% endif %}>
+                                {{ loc.name }}
+                            </option>
                             {% endfor %}
                         </select>
                     </div>
@@ -32,52 +38,52 @@
                         <div class="col-6">
                             <label class="form-label">Вес (кг)</label>
                             <input type="number" name="weight_kg" class="form-control"
-                                   step="0.01" min="0.01" value="10" required>
+                                   step="0.01" min="0.01" required
+                                   value="{{ form.get('weight_kg', '10') }}">
                         </div>
                         <div class="col-6">
                             <label class="form-label">Объём (м³)</label>
                             <input type="number" name="volume_m3" class="form-control"
-                                   step="0.001" min="0.001" value="0.1" required>
+                                   step="0.001" min="0.001" required
+                                   value="{{ form.get('volume_m3', '0.1') }}">
                         </div>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label d-block">Категории</label>
+                        {% for name, label in [
+                            ('is_fragile', 'Хрупкий'),
+                            ('is_dangerous', 'Опасный'),
+                            ('is_liquid', 'Жидкость'),
+                            ('is_perishable', 'Скоропорт.'),
+                            ('is_crushable', 'Мнущийся'),
+                            ('req_temp_control', 'Тем. контр.')
+                        ] %}
                         <div class="form-check form-check-inline">
-                            <input type="checkbox" name="is_fragile" class="form-check-input" id="c1">
-                            <label class="form-check-label" for="c1">Хрупкий</label>
+                            <input type="checkbox" name="{{ name }}" class="form-check-input"
+                                   id="c_{{ name }}"
+                                   {% if form.get(name) %}checked{% endif %}>
+                            <label class="form-check-label" for="c_{{ name }}">{{ label }}</label>
                         </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" name="is_dangerous" class="form-check-input" id="c2">
-                            <label class="form-check-label" for="c2">Опасный</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" name="is_liquid" class="form-check-input" id="c3">
-                            <label class="form-check-label" for="c3">Жидкость</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" name="is_perishable" class="form-check-input" id="c4">
-                            <label class="form-check-label" for="c4">Скоропорт.</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" name="is_crushable" class="form-check-input" id="c5">
-                            <label class="form-check-label" for="c5">Мнущийся</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input type="checkbox" name="req_temp_control" class="form-check-input" id="c6">
-                            <label class="form-check-label" for="c6">Тем. контр.</label>
-                        </div>
+                        {% endfor %}
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label">Стратегия</label>
                         <select name="strategy" class="form-select">
-                            <option value="cheapest">💰 Дешевле</option>
-                            <option value="fastest">⚡ Быстрее</option>
+                            <option value="cheapest"
+                                {% if form.get('strategy', 'cheapest') == 'cheapest' %}selected{% endif %}>
+                                💰 Дешевле</option>
+                            <option value="fastest"
+                                {% if form.get('strategy') == 'fastest' %}selected{% endif %}>
+                                ⚡ Быстрее</option>
                         </select>
                     </div>
 
-                    <button type="submit" class="btn btn-primary w-100">Рассчитать</button>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-grow-1">Рассчитать</button>
+                        <a href="{{ url_for('calculate_route') }}" class="btn btn-outline-secondary">Очистить</a>
+                    </div>
                 </form>
             </div>
         </div>
@@ -112,8 +118,7 @@
                     <span>{{ seg.to_location }}</span>
                     <span class="ms-auto text-nowrap">
                         <span class="badge bg-light text-dark">
-                            {{ seg.transport_type|transport_label }}
-                        </span>
+                            {{ seg.transport_type|transport_label }}</span>
                         <small class="text-muted ms-1">
                             {{ seg.duration_min|fmt_minutes }} · {{ seg.cost|fmt_money }}
                         </small>
